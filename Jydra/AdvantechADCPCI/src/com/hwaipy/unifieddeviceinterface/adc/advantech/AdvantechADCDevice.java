@@ -4,7 +4,7 @@ package com.hwaipy.unifieddeviceinterface.adc.advantech;
  *
  * @author ustc
  */
-public class AdvantechADCDevice{
+public class AdvantechADCDevice {
 
     private final long deviceIndex;
     private final String deviceName;
