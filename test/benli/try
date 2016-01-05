@@ -1,5 +1,0 @@
-a='shdiahi'
-b='hdib'
-c='PM200'
-if 1.6 in range(1,5):
- print(a.find(b))
