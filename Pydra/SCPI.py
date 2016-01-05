@@ -22,11 +22,15 @@ class SCPICommand:
         else:
             self.fullCmd = self.cmd
 
-    def query(self, args=[]):
-        return self.scpi.query(self.createCommand(True, args))
+    def query(self, *args):
+        re = self.scpi.query(self.createCommand(True, [arg for arg in args]))
+        if re is not None:
+            if (len(re)>0) and (re[-1]=='\n'):
+                re = re[:-1]
+        return re
 
-    def write(self, args=[]):
-        self.scpi.write(self.createCommand(False, args))
+    def write(self, *args):
+        self.scpi.write(self.createCommand(False, [arg for arg in args]))
 
     def createCommand(self, isQuery, args=[]):
         cmd = self.fullCmd
