@@ -2,131 +2,172 @@ __author__ = 'Benli'
 __version__ = 'v1.0.20160105'
 
 import visa
-import sys
-import SCPI
+from SCPI import SCPI
+from InstrumentServers import InstrumentServer,DeviceException
+from Utils import SingleThreadProcessor
 
 class PM200:
     def __init__(self, id):
         self.id = id
-        self.rm = visa.ResourceManager().open_resource(id)
-        self.scpi = SCPI(self.rm.query, self.rm.write)
-
-    def rest(self):
-        self.rm.write('*RST')
-        return 'Device had been rest.'
-
-    def setLineFrequency(self):
-        return self.scpi.SYSTem.LFRequency.write([50])
-
-    def getIdentity(self):
-        return self.scpi._IDN.query()
-
-    def getSensorInfo(self):
-        return  self.scpi.SYSTem.SENsor.IDN.query()
-
-    def getWavelength(self):
-        wl = self.scpi.SENSE.CORRECTION.WAVELENGTH.query()
-        return float(wl)
-
-    def setWavelength(self, wavelength):
-        self.scpi.SENSE.CORRECTION.WAVELENGTH.write([wavelength])
-
-    def isAutoRange(self):
-        return self.scpi.SENSE.POWER.DC.RANGE.AUTO.query()
-
-    def getMeasureRange_at_W(self):
-        return self.scpi.SENSE.POWER.DC.RANGE.query()
-
-    def setMeasureRange_at_W(self, range):
-        self.scpi.SENSE.POWER.RANGE.write([range])
-
-    def setAutoRange(self, status):
-        self.scpi.SENSE.POWER.RANGE.AUTO.write([1 if status else 0])
-
-    def measure(self):
-        return float(self.scpi.MEASure.query()[:-1])
-
-    def Beeper(self):
-        self.scpi.SYSTem.BEEPer.write()
-        return 'Beeper had been activated'
-
-    def setbeamdiameter(self, diameter):
-        self.scpi.SENSE.CORRECTION.BEAMdiameter.write([diameter])
-
-    def setdefaultbeamdiameter(self):
-        self.setbeamdiameter('DEFault')
-
-    def getbeamdiameter(self):
-        return self.scpi.SENSE.CORRECTION.BEAMdiameter.query()
-
-    def getbandwidth(self):
-        return self.scpi.INPut.FILTer.query()
-
-
-    def onBandwidthFilter(self):
-        self.scpi.INPut.FILTer.write([1])
-
-    def offBandwidthFilter(self):
-        self.scpi.INPut.FILTer.write([0])
-
-    def setAveragingRate(self, rate):
-        self.scpi.SENSe.AVERage.COUNt.write([rate])
-
-    def getAveragingRate(self):
-        return self.scpi.SENSe.AVERage.COUNt.query()
-
-
-class DeviceException(Exception):
-    def __init__(self, msg, exception=None):
-        self.message = msg
-        self.exception = exception
-
-
-class PM:
-    def __init__(self, id):
-        self.id = id
         try:
             rm = visa.ResourceManager().open_resource(id)
-            IDN = rm.query('*IDN?')
-            if (IDN.find('Thorlabs') != -1) and IDN.find('PM200'):
-                self.pm = PM200(id)
-                self.type = 'PM200'
-                self.maxChannelNum = 1
-            elif (IDN.find('Thorlabs') != -1) and IDN.find('PM320'):
-                self.pm = PM320(id)
-                self.type = 'PM320'
-                self.maxChannelNum = 2
-            # self.type=re.split(',',IDN[:-1])[1]
+        except BaseException as e:
+            raise DeviceException('Error in open device ID: {}'.format(id), e)
+        stp = SingleThreadProcessor()
+        def stpQuery(*args):
+            return stp.invokeAndWait(rm.query, *args)
+        def stpWrite(*args):
+            stp.invokeLater(rm.write, *args)
+        self.scpi = SCPI(stpQuery, stpWrite)
+        idns = self.getIdentity()
+        if (idns[0] == 'Thorlabs') and (idns[1] == 'PM200'):
+            self.serialNumber = idns[2]
+            self.version = idns[3]
+            self.maxChannelNum = 1
+        else:
+            raise DeviceException('Identity {} not recognized.'.format(idns))
+        self.__setLineFrequency()
 
-            self.__setLineFrequency()
+    def getIdentity(self):
+        try:
+            idn = self.scpi._IDN.query()
+            if idn is None:
+                return [''] * 4
+            if len(idn) is 0:
+                return [''] * 4
+            idns = idn.split(',')
+            while len(idns) < 4:
+                idns.append('')
+            return idns[:4]
+        except Exception as e:
+            raise DeviceException('Error in getIdentity', e)
+
+    def getWavelength(self, channel):
+        self.__checkChannel(channel)
+        try:
+            wl = self.scpi.SENSE.CORRECTION.WAVELENGTH.query()
+            return float(wl)
+        except Exception as e:
+            raise DeviceException('Error in getWavelength', e)
+
+    def setWavelength(self, channel, wavelength):
+        self.__checkChannel(channel)
+        try:
+            wavelengthI = wavelength * 100 // 1 / 100
+            self.scpi.SENSE.CORRECTION.WAVELENGTH.write(wavelengthI)
+            wavelengthC = self.getWavelength(channel)
+        except Exception as e:
+            raise DeviceException('Error in setWavelength', e)
+        if wavelengthI != wavelengthC:
+            raise DeviceException('Wavelength {} out of range.'.format(wavelength))
+
+    def isAutoRange(self, channel):
+        self.__checkChannel(channel)
+        try:
+            return self.scpi.SENSE.POWER.DC.RANGE.AUTO.query() == '1'
+        except Exception as e:
+            raise DeviceException('Error in isAutoRange', e)
+
+    def setAutoRange(self, channel, status):
+        self.__checkChannel(channel)
+        try:
+            self.scpi.SENSE.POWER.RANGE.AUTO.write(1 if status else 0)
+        except Exception as e:
+            raise DeviceException('Error in setAutoRange', e)
+
+    def getMeasureRange(self, channel):
+        self.__checkChannel(channel)
+        try:
+            return self.scpi.SENSE.POWER.DC.RANGE.query()
+        except Exception as e:
+            raise DeviceException('Error in getMeasureRange', e)
+
+    def setMeasureRange(self, channel, measureRange):
+        self.__checkChannel(channel)
+        try:
+            self.scpi.SENSE.POWER.RANGE.write(measureRange)
+        except Exception as e:
+            raise DeviceException('Error in setMeasureRange', e)
+
+    def beeper(self):
+        try:
+            self.scpi.SYSTem.BEEPer.write()
+        except Exception as e:
+            raise DeviceException('Error in beeper', e)
+
+    def getAveragingRate(self, channel):
+        self.__checkChannel(channel)
+        try:
+            return int(self.scpi.SENSe.AVERage.COUNt.query())
+        except Exception as e:
+            raise DeviceException('Error in getAveragingRate', e)
+
+    def setAveragingRate(self, channel, averagingRate):
+        self.__checkChannel(channel)
+        try:
+            self.scpi.SENSe.AVERage.COUNt.write(averagingRate)
+        except Exception as e:
+            raise DeviceException('Error in setAveragingRate', e)
+
+    def getBandWidthFilterStatus(self, channel):
+        self.__checkChannel(channel)
+        try:
+            return self.scpi.INPut.FILTer.query() == '1'
+        except Exception as e:
+            raise DeviceException('Error in getBandWidthFilterStatus', e)
+
+    def setBandWidthFilterStatus(self, channel, status):
+        self.__checkChannel(channel)
+        try:
+            self.scpi.INPut.FILTer.write(1 if status else 0)
         except Exception as e:
             raise DeviceException('', e)
 
-            # thorlabs   serial
+    def getBeamDiameter(self, channel):
+        self.__checkChannel(channel)
+        try:
+            return self.scpi.SENSE.CORRECTION.BEAMdiameter.query()
+        except Exception as e:
+            raise DeviceException('', e)
 
+    def setBeamDiameter(self, channel, diameter):
+        self.__checkChannel(channel)
+        try:
+            self.scpi.SENSE.CORRECTION.BEAMdiameter.write(diameter)
+        except Exception as e:
+            raise DeviceException('', e)
+
+    def measure(self, channel):
+        self.__checkChannel(channel)
+        try:
+            return float(self.scpi.MEASure.query())
+        except Exception as e:
+            raise DeviceException('', e)
 
     def reset(self):
         try:
-            return self.pm.rest()
+            self.scpi._RST.write()
         except Exception as e:
             raise DeviceException('', e)
+
+    def __measureLoop(self):
+        pass
 
     def __setLineFrequency(self):
-
         try:
-            return self.pm.setLineFrequency()
+            return self.scpi.SYSTem.LFRequency.write(50)
         except Exception as e:
             raise DeviceException('', e)
 
-    def getIdentity(self):
-        try:
-            return self.pm.getIdentity()
-        except Exception as e:
-            raise DeviceException('', e)
+    def __checkChannel(self, channel):
+        if channel>=0 and channel < self.maxChannelNum:
+            return
+        raise DeviceException('Channel {} out of range.'.format(channel))
 
-    def getSensorInfo(self):
+    def __getSensorInfo__NotComplete(self):
         try:
-            si = self.pm.getSensorInfo()
+            si = self.scpi.SYSTem.SENsor.IDN.query()
+            print(si)
             # sis=re.split(',',si[:-1])
             # print(sis)
             # sibin=bin(int(sis[5]))
@@ -136,185 +177,11 @@ class PM:
             raise DeviceException('', e)
             # self.rm.query('SYSTem:SENSor:IDN?')
 
-    def getWavelength(self, channel):
-
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return self.pm.getWavelength()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def setWavelength(self, channel, wavelength):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return self.pm.setWavelength(wavelength)
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def isAutoRange(self, channel):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return self.pm.isAutoRange()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def getMeasureRange(self, channel):
-
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return self.pm.getMeasureRange_at_W()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def setMeasureRange(self, channel, Range):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.setMeasureRange_at_W(Range)
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def onAutoRange(self, channel):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.setAutoRange(1)
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-    def offAutoRange(self,channel):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.setAutoRange(0)
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-    def measure(self, channel, averaging=1):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                if averaging != 1:
-                    self.setAveragingRate(channel,averaging)
-                return float(self.pm.measure())
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def Beeper(self):
-        try:
-            return self.pm.Beeper()
-        except Exception as e:
-            raise DeviceException('', e)
-
-    def setBeamDiameter(self, channel, diameter):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.setbeamdiameter(diameter)
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-            # def setdefaultbeamdiameter(self):
-            #   self.pm.setdefaultbeamdiameter()
-
-    def getBeamDiameter(self, channel):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return self.pm.getbeamdiameter()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    # filter on/off
-    def getFilterStatus(self, channel):
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return  self.pm.getbandwidth()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def onBandWidthFilter(self, channel):
-
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.onBandwidthFilter()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def offBandWidthFilter(self, channel):
-
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.offBandwidthFilter()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-
-        # measure
-
-    def setAveragingRate(self, channel, rate):
-
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                self.pm.setAveragingRate(rate)
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-    def getAveragingRate(self, channel):
-
-        if channel in range(1, self.maxChannelNum + 1):
-            try:
-                return self.pm.getAveragingRate()
-            except Exception as e:
-                raise DeviceException('', e)
-        else:
-            raise DeviceException('Channel out of range')
-
-
-def init_PM():
+if __name__ == '__main__':
+    print('go')
     rm = visa.ResourceManager()
     instIDs = rm.list_resources()
-    # choose=int(input("Choose your instrument(begin with 1): "))
-    choose = 1
-    pmA = PM(instIDs[choose - 1])
-
-    print(pmA.type)
-    #pmA.Beeper()
-    print(pmA.measure(1,3000))
-    print(pmA.getIdentity())
-    print(pmA.getSensorInfo())
-    print(pmA.getAveragingRate(1))
-    pmA.onBandWidthFilter(1)
-    print(pmA.getFilterStatus(1))
-    pmA.offBandWidthFilter(1)
-    print(pmA.getFilterStatus(1))
-    pmA.setBeamDiameter(1,1)
-    print(pmA.getBeamDiameter(1))
-    pmA.setWavelength(1,800)
-    print(pmA.getWavelength(1))
-    pmA.onAutoRange(1)
-    print(pmA.isAutoRange(1))
-    pmA.setMeasureRange(1,2)
-    print(pmA.getMeasureRange(1))
-
-init_PM()
+    id = 'USB0::0x1313::0x80B0::P3000997::INSTR'
+    pm = PM200(id)
+    print(pm.setWavelength(0,809.1))
+    print(pm.getWavelength(0))

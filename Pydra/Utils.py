@@ -52,3 +52,30 @@ class BlockingCommunicator(Communicator):
     def query(self, message):
         self.sendLater(message)
         return self.dataQueue.get()
+
+class SingleThreadProcessor:
+    def __init__(self):
+        self.queue = queue.Queue()
+        threading._start_new_thread(self.__loop, ())
+
+    def invokeLater(self, action, *args, **kwargs):
+        self.queue.put((action,args,kwargs))
+
+    def invokeAndWait(self, action, *args, **kwargs):
+        semaphore = threading.Semaphore(0)
+        result = []
+        def doAction(*args, **kwargs):
+            ret = action(*args,**kwargs)
+            result.append(ret)
+            semaphore.release()
+        self.queue.put((doAction,args,kwargs))
+        semaphore.acquire()
+        return result[0]
+
+    def __loop(self):
+        while True:
+            action, args, kwargs = self.queue.get()
+            try:
+                action(*args, **kwargs)
+            except BaseException as e:
+                print(e.with_traceback())
