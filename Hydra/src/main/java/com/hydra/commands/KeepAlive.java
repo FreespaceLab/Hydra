@@ -15,10 +15,8 @@ public class KeepAlive extends Command {
   }
 
   @Override
-  public void execute(Message message, Client client) {
-  }
-
-  @Override
   protected void executeCommand(Message message, Client client) {
+    Message response = message.response();
+    client.write(response);
   }
 }

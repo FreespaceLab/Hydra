@@ -19,6 +19,9 @@ class Session:
             invokers = [invokers]
         self.invokers = invokers
         self.semaphores = {}
+        self.keepAliveTime = time.time()
+        self.__firstConnectionSemaphore = threading.Semaphore(0)
+        self.__firstConnectionSemaphoreReleased = False
 
     def start(self, async=False):
         def connectionLoop():
@@ -27,10 +30,13 @@ class Session:
                     self.__doConnection()
                 except BaseException as e:
                     print(e)
+                if not self.__firstConnectionSemaphoreReleased:
+                    self.__firstConnectionSemaphore.release()
                 time.sleep(random.randint(500, 5000) / 1000)
 
         threading._start_new_thread(connectionLoop, ())
 
+        self.__firstConnectionSemaphore.acquire()
         if not async:
             while True:
                 time.sleep(1000)
@@ -93,12 +99,15 @@ class Session:
             if semaphore is not None:
                 self.semaphores[str(message.ResponseID)] = message
                 semaphore.release()
+            elif (type is Message.Type.Response) and (message.Response == 'KeepAlive'):
+                self.keepAliveTime = time.time()
         else:
             print('A Wrong Message: {}'.format(message))
 
     def __doConnection(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect(self.address)
+        sct = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sct.connect(self.address)
+        self.socket = sct
         self.unpacker = msgpack.Unpacker(encoding='utf-8')
         communicator = Utils.BlockingCommunicator(self.socket, self.__dataFetcher, self.__dataSender)
         communicator.start()
@@ -106,13 +115,25 @@ class Session:
         self.clientID = connectionResponse.ClientID
         print('client registered: ID={}'.format(self.clientID))
         self.communicator = communicator
+        if not self.__firstConnectionSemaphoreReleased:
+            self.__firstConnectionSemaphore.release()
 
         def keepAliveLoop():
+            time.sleep(5)
             while communicator.running:
-                time.sleep(5)
-                self.communicator.sendLater(Message.creator.KeepAlive())
+                communicator.sendLater(Message.creator.KeepAlive())
+                time.sleep(random.randint(4000, 6000) / 1000)
 
         threading._start_new_thread(keepAliveLoop, ())
+
+        def keepAliveCheckerLoop():
+            time.sleep(5)
+            while communicator.running:
+                if time.time() - self.keepAliveTime > 20:
+                    self.socket.close()
+                time.sleep(5)
+
+        threading._start_new_thread(keepAliveCheckerLoop, ())
         if self.services:
             for servive in self.services:
                 serviceRegistrationResponse = self.request(Message.creator.ServiceRegistration(Service=servive))
@@ -249,5 +270,5 @@ class Message:
 
 
 if __name__ == '__main__':
-    session = Session('SessionTest', ('localhost', 20102), ['S1', 'S2'], {})
+    session = Session('SessionTest', ('192.168.1.11', 20102), ['S1', 'S2'], {})
     session.start()
