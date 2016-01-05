@@ -20,6 +20,8 @@ class Communicator:
         try:
             while self.running:
                 self.dataFetcher(self.channel)
+        except BaseException as re:
+            pass
         finally:
             self.running = False
 
@@ -31,6 +33,8 @@ class Communicator:
             while self.running:
                 message = self.sendQueue.get()
                 self.dataSender(self.channel, message)
+        except BaseException as e:
+            pass
         finally:
             self.running = False
 

@@ -43,9 +43,11 @@ class RemoteInstrument:
 
 
 if __name__ == '__main__':
-    ri = RemoteInstrument('RemoteInstrumentTest', 'R22_AdvantechADC_PCI1742U', address=('172.16.60.199', 20102))
+    ri = RemoteInstrument('RemoteInstrumentTest3', 'R22_AdvantechADC_PCI1742U', address=('127.0.0.1', 20102))
     ri.start(async=True)
     #    print(ri.identity('arg1', 20, 'arg3', ['l1', 2, 'l3'], time=100))
-    print(ri.readAnalogVoltage(2))
+    #print(ri.readAnalogVoltage(2))
 
-    time.sleep(2)
+    time.sleep(10)
+
+    time.sleep(2000)

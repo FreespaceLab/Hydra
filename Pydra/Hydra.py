@@ -5,6 +5,7 @@ import msgpack
 import enum
 import Utils
 import threading
+import random
 
 
 class Session:
@@ -20,35 +21,35 @@ class Session:
         self.semaphores = {}
 
     def start(self, async=False):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect(self.address)
-        self.unpacker = msgpack.Unpacker(encoding='utf-8')
-        self.communicator = Utils.BlockingCommunicator(self.socket, self.__dataFetcher, self.__dataSender)
-        self.communicator.start()
-        connectionResponse = self.request(Message.creator.Connection(Name=self.name))
-        self.clientID = connectionResponse.ClientID
-        print('client registered: ID={}'.format(self.clientID))
-        if self.services:
-            for servive in self.services:
-                serviceRegistrationResponse = self.request(Message.creator.ServiceRegistration(Service=servive))
+        def connectionLoop():
+            while True:
+                try:
+                    self.__doConnection()
+                except BaseException as e:
+                    print(e)
+                time.sleep(random.randint(500, 5000) / 1000)
+
+        threading._start_new_thread(connectionLoop, ())
+
         if not async:
             while True:
                 time.sleep(1000)
 
-    # def sendMessageLater(self, message):
-    # self.communicator.sendLater(message)
-
-    def request(self, message, async=False):
+    def request(self, message, async=False, communicator=None):
         if message.getType() is not Message.Type.Request:
             raise
         if async:
             # TODO sync only for now
             raise
         else:
-            self.communicator.sendLater(message)
+            if communicator is None:
+                self.communicator.sendLater(message)
+            else:
+                communicator.sendLater(message)
             semaphore = threading.Semaphore(0)
             self.semaphores[str(message.MessageID)] = semaphore
-            semaphore.acquire()
+            if not semaphore.acquire(timeout=5):
+                raise RuntimeError('Timeout in waiting response.')
             response = self.semaphores.pop(str(message.MessageID), None)
             if response is None:
                 raise RuntimeError('None response is got.')
@@ -95,15 +96,40 @@ class Session:
         else:
             print('A Wrong Message: {}'.format(message))
 
+    def __doConnection(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect(self.address)
+        self.unpacker = msgpack.Unpacker(encoding='utf-8')
+        communicator = Utils.BlockingCommunicator(self.socket, self.__dataFetcher, self.__dataSender)
+        communicator.start()
+        connectionResponse = self.request(Message.creator.Connection(Name=self.name), communicator=communicator)
+        self.clientID = connectionResponse.ClientID
+        print('client registered: ID={}'.format(self.clientID))
+        self.communicator = communicator
+
+        def keepAliveLoop():
+            while communicator.running:
+                time.sleep(5)
+                self.communicator.sendLater(Message.creator.KeepAlive())
+
+        threading._start_new_thread(keepAliveLoop, ())
+        if self.services:
+            for servive in self.services:
+                serviceRegistrationResponse = self.request(Message.creator.ServiceRegistration(Service=servive))
+        while communicator.running:
+            time.sleep(0.5)
+
     def __dataFetcher(self, socket):
         data = self.socket.recv(10000000)
+        if len(data) == 0:
+            raise RuntimeError('Connection closed.')
         self.unpacker.feed(data)
         for packed in self.unpacker:
             message = Message(packed, False)
             self.messageDeal(message)
 
     def __dataSender(self, socket, message):
-        self.socket.send(msgpack.packb(message.pack()))
+        s = self.socket.send(msgpack.packb(message.pack()))
 
 
 class ProtocolException(Exception):
@@ -117,6 +143,15 @@ class ProtocolException(Exception):
             return '{} - {}'.format(self.description, self.message)
         else:
             return self.description
+
+
+class ConnectionException(Exception):
+    def __init__(self, description):
+        Exception.__init__(self)
+        self.description = description
+
+    def __str__(self):
+        return self.description
 
 
 class Message:

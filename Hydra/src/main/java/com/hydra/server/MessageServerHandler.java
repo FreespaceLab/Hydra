@@ -27,6 +27,7 @@ public class MessageServerHandler implements IoHandler {
   public void sessionOpened(IoSession session) {
     Client client = Client.create(session);
     session.setAttribute(CLIENT_KEY, client);
+    session.getConfig().setIdleTimeInMillis(IdleStatus.READ_IDLE, 20000);
   }
 
   @Override
@@ -37,6 +38,10 @@ public class MessageServerHandler implements IoHandler {
 
   @Override
   public void sessionIdle(IoSession session, IdleStatus status) {
+    LOGGER.info("Session[" + session.getId() + "] idled for "
+            + session.getConfig().getIdleTimeInMillis(IdleStatus.READ_IDLE)
+            + " ms, time to close.");
+    session.close(true);
   }
 
   @Override

@@ -1,6 +1,7 @@
 package com.hydra.core;
 
 import com.hydra.commands.ConnectionCommand;
+import com.hydra.commands.KeepAlive;
 import com.hydra.commands.ServiceRegistrationCommand;
 import com.hydra.commands.SummaryRegistrationCommand;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,5 +27,6 @@ public class Commands {
     registerCommand(new ConnectionCommand());
     registerCommand(new ServiceRegistrationCommand());
     registerCommand(new SummaryRegistrationCommand());
+    registerCommand(new KeepAlive());
   }
 }
