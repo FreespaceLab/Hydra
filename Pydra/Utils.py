@@ -78,4 +78,4 @@ class SingleThreadProcessor:
             try:
                 action(*args, **kwargs)
             except BaseException as e:
-                print(e.with_traceback())
+                print(e)
