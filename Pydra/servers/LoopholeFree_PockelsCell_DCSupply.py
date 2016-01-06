@@ -116,33 +116,8 @@ class DCSupplyBKUnderlying:
     def dataSender(self, serialChannel, message):
         serialChannel.write(message.encode('utf-8'))
 
-    def version(self):
-        return self.communicator.query('SYSTem:VERSion?\n')
 
-    def remote(self):
-        self.communicator.sendLater('SYSTem:REMote\n')
 
-    def setOutput(self, outputs):
-        outputCodeString = ['1' if o else '0' for o in outputs]
-        outputCode = ','.join(outputCodeString)
-        self.communicator.sendLater('APP:OUT {}\n'.format(outputCode))
-
-    def setVoltage(self, voltages):
-        outputCodeString = ['{}'.format(v) for v in voltages]
-        outputCode = ','.join(outputCodeString)
-        self.communicator.sendLater('APP:VOLT {}\n'.format(outputCode))
-
-    def setCurrent(self, currents):
-        outputCodeString = ['{}'.format(i) for i in currents]
-        outputCode = ','.join(outputCodeString)
-        self.communicator.sendLater('APP:CURR {}\n'.format(outputCode))
-
-    def measure(self):
-        voltageString = self.communicator.query('MEAS:VOLT:ALL?\n')[:-1].split(', ')
-        currentString = self.communicator.query('MEAS:CURR:ALL?\n')[:-1].split(', ')
-        voltages = [float(vs) for vs in voltageString]
-        currents = [float(cs) for cs in currentString]
-        return [voltages, currents]
 
 __clientName__ = 'PC Controller Bob'
 __serverPort__ = 20102
