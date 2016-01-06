@@ -34,11 +34,6 @@ class InstrumentServer:
         except Exception as ex:
             print(ex)
 
-class DeviceException(BaseException):
-    def __init__(self, msg, exception=None):
-        self.message = msg
-        self.exception = exception
-
 if __name__ == '__main__':
     class TestDevice:
         def __init__(self):
