@@ -3,13 +3,15 @@ __author__ = 'Hwaipy'
 import pyvisa as visa
 from Utils import SingleThreadProcessor
 from SCPI import SCPI
+import sys
 
 class VISAInstrument:
-    def __init__(self, resourceID, channel=1, manufacturer=None, model=None):
+    manufacturer = 'USTC'
+    model = 'VISAInstrument'
+
+    def __init__(self, resourceID, channel=1):
         self.resourceID = resourceID
         self.channelCount = channel
-        self.manufacturer=manufacturer
-        self.model = model
         try:
             self.resource = visa.ResourceManager().open_resource(resourceID)
         except BaseException as e:
@@ -20,13 +22,14 @@ class VISAInstrument:
         def stpWrite(*args):
             stp.invokeLater(self.resource.write, *args)
         self.scpi = SCPI(stpQuery, stpWrite)
+        self.verifyIdentity()
 
     def getIdentity(self):
-        return ['USTC','VISAInstrument','0','1.0.0']
+        return [VISAInstrument.manufacturer,VISAInstrument.model,'0','1.0.0']
 
     def verifyIdentity(self):
         idns = self.getIdentity()
-        if ((self.manufacturer==None)or(idns[0] == self.manufacturer)) and ((self.model==None)or(idns[1] ==self.model)):
+        if ((idns[0] == self.__class__.manufacturer)) and ((idns[1] ==self.__class__.model)):
             self.serialNumber = idns[2]
             self.version = idns[3]
             self.maxChannelNum = 1
@@ -44,6 +47,22 @@ class VISAInstrument:
         wrapper.verifyIdentity()
         return wrapper
 
+    @classmethod
+    def listResources(cls):
+        resources = visa.ResourceManager().list_resources()
+        valid = []
+        for resource in resources:
+            try:
+                r = visa.ResourceManager().open_resource(resource)
+                r.timeout=100
+                idn = r.query('*IDN?')[:-1]
+                idns = [i.strip(' ') for i in idn.split(',')]
+                if (idns[0] == cls.manufacturer) and (idns[1] == cls.model):
+                    valid.append(resource)
+                r.close()
+            except BaseException as e:
+                pass
+        return valid
 class VISAInstrumentWrapper:
     def __init__(self, instrument):
         self.instrument = instrument
@@ -66,6 +85,10 @@ class DeviceException(BaseException):
     def __init__(self, msg, exception=None):
         self.message = msg
         self.exception = exception
+
+class InstrumentsServer:
+    def __init__(self):
+        pass
 
 if __name__ == '__main__':
     print('Instrument')

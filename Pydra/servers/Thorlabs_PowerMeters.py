@@ -5,8 +5,11 @@ from Instruments import DeviceException,VISAInstrument
 import time
 
 class PM200(VISAInstrument):
+    manufacturer = 'Thorlabs'
+    model = 'PM200'
+
     def __init__(self, resourceID):
-        super().__init__(resourceID,1, 'Thorlabs','PM200')
+        super().__init__(resourceID,1)
         self.setLineFrequency()
 
     def getIdentity(self):

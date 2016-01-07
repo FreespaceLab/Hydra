@@ -9,8 +9,11 @@ from Utils import SingleThreadProcessor
 import math
 
 class IT6322(VISAInstrument):
+    manufacturer = 'ITECH Ltd.'
+    model = 'IT6322'
+
     def __init__(self, resourceID):
-        super().__init__(resourceID,3,'ITECH Ltd.','IT6322')
+        super().__init__(resourceID, 3)
         self.__remote()
         self.voltageSetpoints = self.getVoltageSetpoints()
         self.currentLimits = self.getCurrentLimits()
@@ -128,3 +131,6 @@ if __name__ == '__main__':
     #pm.setCurrentLimits([1, 1, 1])
     #pm.setOutputStatuses([False]*3)
     pm.beeper()
+    import time
+    time.sleep(1000)
+

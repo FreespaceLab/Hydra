@@ -1,0 +1,7 @@
+<instruments>
+    <instrument>
+        <module>Thorlabs_PowerMeters</module>
+        <module_path>./servers/</module_path>
+        <class>PM200</class>
+    </instrument>
+</instruments>
